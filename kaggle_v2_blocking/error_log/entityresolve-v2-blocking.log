@@ -1,0 +1,44 @@
+[{"stream_name":"stdout","time":0.703835645,"data":"Cloning repository...\n"}
+,{"stream_name":"stderr","time":0.741445887,"data":"Cloning into 'entity-resolve-ml'...\n"}
+,{"stream_name":"stdout","time":2.10992046,"data":"Installing dependencies...\n"}
+,{"stream_name":"stdout","time":6.8195605310000005,"data":"Collecting rapidfuzz\n"}
+,{"stream_name":"stdout","time":7.002467416,"data":"  Downloading rapidfuzz-3.14.6-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (12 kB)\n"}
+,{"stream_name":"stdout","time":7.028400293,"data":"Requirement already satisfied: scikit-learn in /usr/local/lib/python3.12/dist-packages (1.6.1)\n"}
+,{"stream_name":"stdout","time":7.032595408,"data":"Requirement already satisfied: tqdm in /usr/local/lib/python3.12/dist-packages (4.67.3)\n"}
+,{"stream_name":"stdout","time":7.050565277,"data":"Requirement already satisfied: numpy\u003e=1.19.5 in /usr/local/lib/python3.12/dist-packages (from scikit-learn) (2.0.2)\n"}
+,{"stream_name":"stdout","time":7.058818093,"data":"Requirement already satisfied: scipy\u003e=1.6.0 in /usr/local/lib/python3.12/dist-packages (from scikit-learn) (1.16.3)\n"}
+,{"stream_name":"stdout","time":7.060490241,"data":"Requirement already satisfied: joblib\u003e=1.2.0 in /usr/local/lib/python3.12/dist-packages (from scikit-learn) (1.5.3)\n"}
+,{"stream_name":"stdout","time":7.063012667,"data":"Requirement already satisfied: threadpoolctl\u003e=3.1.0 in /usr/local/lib/python3.12/dist-packages (from scikit-learn) (3.6.0)\n"}
+,{"stream_name":"stdout","time":7.148723495,"data":"Downloading rapidfuzz-3.14.6-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (3.2 MB)\n"}
+,{"stream_name":"stdout","time":7.495812501,"data":"   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.2/3.2 MB 9.4 MB/s eta 0:00:00\n"}
+,{"stream_name":"stdout","time":9.951095867,"data":"Installing collected packages: rapidfuzz\n"}
+,{"stream_name":"stdout","time":10.129278136,"data":"Successfully installed rapidfuzz-3.14.6\n"}
+,{"stream_name":"stdout","time":10.365434899,"data":"Starting V2 Blocking on TRAIN split...\n"}
+,{"stream_name":"stdout","time":13.520534693,"data":"[blocking][two-stage] Stage 1: exact-key blocking...\n"}
+,{"stream_name":"stdout","time":13.520569554,"data":"[blocking] Building inverted index from 2 file(s)...\n"}
+,{"stream_name":"stdout","time":13.520575079,"data":"[blocking]   Indexing train_source2.tsv...\n"}
+,{"stream_name":"stderr","time":13.520582399,"data":"Traceback (most recent call last):\n"}
+,{"stream_name":"stderr","time":13.520603238,"data":"  File \"/kaggle/working/entity-resolve-ml/src/blocking/blocking_v2.py\", line 301, in \u003cmodule\u003e\n"}
+,{"stream_name":"stderr","time":13.520660184,"data":"    main()\n"}
+,{"stream_name":"stderr","time":13.520782381,"data":"  File \"/kaggle/working/entity-resolve-ml/src/blocking/blocking_v2.py\", line 278, in main\n"}
+,{"stream_name":"stderr","time":13.520972173,"data":"    generate_candidates_two_stage(\n"}
+,{"stream_name":"stderr","time":13.52098237,"data":"  File \"/kaggle/working/entity-resolve-ml/src/blocking/blocking_v2.py\", line 188, in generate_candidates_two_stage\n"}
+,{"stream_name":"stderr","time":13.521152058,"data":"    s23_index = build_inverted_index_v2([s2_path, s3_path], index_path)\n"}
+,{"stream_name":"stderr","time":13.521199909,"data":"                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":13.521207058,"data":"  File \"/kaggle/working/entity-resolve-ml/src/blocking/blocking_v2.py\", line 70, in build_inverted_index_v2\n"}
+,{"stream_name":"stderr","time":13.521355499,"data":"    with open(path, \"r\", encoding=\"utf-8\") as f:\n"}
+,{"stream_name":"stderr","time":13.521437914,"data":"         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":13.521450067,"data":"FileNotFoundError: [Errno 2] No such file or directory: '/kaggle/input/amazon-ml-challenge/dataset/train/train_source2.tsv'\n"}
+,{"stream_name":"stderr","time":13.747206447,"data":"Traceback (most recent call last):\n"}
+,{"stream_name":"stderr","time":13.747242714,"data":"  File \"/kaggle/src/script.py\", line 17, in \u003cmodule\u003e\n"}
+,{"stream_name":"stderr","time":13.747299381,"data":"    subprocess.run(f\"python src/blocking/blocking_v2.py --data_dir {DATA_DIR}/train --split train --out_file /kaggle/working/v2_train_candidates.tsv --mode two_stage\", shell=True, check=True)\n"}
+,{"stream_name":"stderr","time":13.747444599,"data":"  File \"/usr/lib/python3.12/subprocess.py\", line 571, in run\n"}
+,{"stream_name":"stderr","time":13.748861131,"data":"    raise CalledProcessError(retcode, process.args,\n"}
+,{"stream_name":"stderr","time":13.74887552,"data":"subprocess.CalledProcessError: Command 'python src/blocking/blocking_v2.py --data_dir /kaggle/input/amazon-ml-challenge/dataset/train --split train --out_file /kaggle/working/v2_train_candidates.tsv --mode two_stage' returned non-zero exit status 1.\n"}
+,{"stream_name":"stderr","time":16.370006838,"data":"/usr/local/lib/python3.12/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":16.37004503,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":16.671267134,"data":"/usr/local/lib/python3.12/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":16.67131735,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":17.538107854,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":19.040341443,"data":"[NbConvertApp] Writing 275988 bytes to __results__.html\n"}
+]
