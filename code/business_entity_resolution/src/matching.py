@@ -53,7 +53,6 @@ def token_jaccard(a: str, b: str) -> float:
     return len(A & B) / len(A | B)
 
 def compute_features(df_pairs, s1_df, s23_df):
-    print("Merging candidate pairs with text...")
     merged = df_pairs.merge(s1_df, left_on='source1_entity_id', right_on='entity_id', how='inner')
     merged = merged.rename(columns={'business_name': 'name1', 'business_address': 'addr1', 'country': 'country1'})
     merged.drop('entity_id', axis=1, inplace=True)
@@ -61,7 +60,6 @@ def compute_features(df_pairs, s1_df, s23_df):
     merged = merged.rename(columns={'business_name': 'name2', 'business_address': 'addr2', 'country': 'country2'})
     merged.drop('entity_id', axis=1, inplace=True)
     
-    print("Computing features using hyper-optimized vectorization...")
     n1_list = merged['name1'].str.lower().tolist()
     n2_list = merged['name2'].str.lower().tolist()
     a1_list = merged['addr1'].str.lower().tolist()
@@ -138,7 +136,6 @@ def build_training_dataset_hard_mining(candidates_file, positive_pairs, s1_df, s
     return df_pairs
 
 def apply_heuristic_overrides(df_pairs, s1_df, s23_df, model_probs, threshold=0.5):
-    print("Applying deterministic business logic overrides...")
     s1_small = s1_df[['entity_id', 'business_name', 'country']]
     s23_small = s23_df[['entity_id', 'business_name', 'country']]
     
@@ -207,6 +204,7 @@ def main():
         positive_pairs = load_ground_truth(gt_file)
         s1_df, s23_df = get_entity_dfs("train", args.data_dir)
         df_pairs = build_training_dataset_hard_mining(args.candidates_file, positive_pairs, s1_df, s23_df)
+        print("Computing features...")
         X = compute_features(df_pairs, s1_df, s23_df)
         y = df_pairs['label']
         model, best_t = train_model(X, y)
@@ -218,7 +216,31 @@ def main():
         test_candidates = pd.read_csv(args.candidates_file, sep="\t")
         s1_df, s23_df = get_entity_dfs("test", args.data_dir)
         
+        with open(args.model_path, 'rb') as f:
+            data = pickle.load(f)
+            model = data['model']
+            threshold = data['threshold']
+            
+        print("Processing test candidates in memory-safe chunks...")
+        match_dict = {}
         pair_list = []
+        chunk_size = 5_000_000
+        total_processed = 0
+        
+        def process_chunk(pairs):
+            df_pairs = pd.DataFrame(pairs)
+            X = compute_features(df_pairs, s1_df, s23_df)
+            probs = model.predict_proba(X)[:, 1]
+            final_pred = apply_heuristic_overrides(df_pairs, s1_df, s23_df, probs, threshold)
+            df_pairs['is_match'] = final_pred
+            matches = df_pairs[df_pairs['is_match'] == 1]
+            for _, row in matches.iterrows():
+                s1 = row['source1_entity_id']
+                cand = row['candidate_entity_id']
+                if s1 not in match_dict:
+                    match_dict[s1] = []
+                match_dict[s1].append(cand)
+
         for _, row in test_candidates.iterrows():
             s1_id = row['source1_entity_id']
             cands = str(row['candidate_entity_ids']).split(',')
@@ -226,23 +248,16 @@ def main():
                 if c and c.strip() != 'nan':
                     pair_list.append({'source1_entity_id': s1_id, 'candidate_entity_id': c.strip()})
                     
-        df_pairs = pd.DataFrame(pair_list)
-        X = compute_features(df_pairs, s1_df, s23_df)
-        
-        with open(args.model_path, 'rb') as f:
-            data = pickle.load(f)
-            model = data['model']
-            threshold = data['threshold']
-            
-        print(f"Predicting matches...")
-        probs = model.predict_proba(X)[:, 1]
-        
-        # Apply Post-Processing Heuristics!
-        final_pred = apply_heuristic_overrides(df_pairs, s1_df, s23_df, probs, threshold)
-        df_pairs['is_match'] = final_pred
-        
-        matches = df_pairs[df_pairs['is_match'] == 1].groupby('source1_entity_id')['candidate_entity_id'].apply(list).reset_index()
-        match_dict = dict(zip(matches['source1_entity_id'], matches['candidate_entity_id']))
+            if len(pair_list) >= chunk_size:
+                total_processed += len(pair_list)
+                print(f"Processed {total_processed} pairs...")
+                process_chunk(pair_list)
+                pair_list = []
+                
+        if len(pair_list) > 0:
+            total_processed += len(pair_list)
+            print(f"Processed {total_processed} pairs...")
+            process_chunk(pair_list)
         
         print(f"Writing final submission to {args.out_file}...")
         with open(args.out_file, 'w') as f:
