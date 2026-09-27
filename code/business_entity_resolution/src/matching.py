@@ -6,7 +6,6 @@ import numpy as np
 import random
 import xgboost as xgb
 import pickle
-import math
 import re
 import heapq
 from rapidfuzz import fuzz
@@ -62,27 +61,25 @@ def compute_features(df_pairs, s1_df, s23_df):
     merged = merged.rename(columns={'business_name': 'name2', 'business_address': 'addr2', 'country': 'country2'})
     merged.drop('entity_id', axis=1, inplace=True)
     
-    print("Computing features...")
-    features = []
-    for _, row in merged.iterrows():
-        name1, name2 = str(row['name1']).lower(), str(row['name2']).lower()
-        addr1, addr2 = str(row['addr1']).lower(), str(row['addr2']).lower()
-        
-        name_jw = JaroWinkler.normalized_similarity(name1, name2)
-        addr_jw = JaroWinkler.normalized_similarity(addr1, addr2)
-        name_jaccard = token_jaccard(name1, name2)
-        addr_jaccard = token_jaccard(addr1, addr2)
-        name_partial = fuzz.partial_token_set_ratio(name1, name2) / 100.0
-        addr_partial = fuzz.partial_token_set_ratio(addr1, addr2) / 100.0
-        name_sort = fuzz.token_sort_ratio(name1, name2) / 100.0
-        addr_sort = fuzz.token_sort_ratio(addr1, addr2) / 100.0
-        country_match = 1.0 if row['country1'] == row['country2'] and row['country1'] != '' else 0.0
-        
-        features.append({
-            'name_jw': name_jw, 'addr_jw': addr_jw, 'name_jaccard': name_jaccard, 'addr_jaccard': addr_jaccard,
-            'name_partial': name_partial, 'addr_partial': addr_partial, 'name_sort': name_sort, 'addr_sort': addr_sort,
-            'country_match': country_match
-        })
+    print("Computing features using hyper-optimized vectorization...")
+    n1_list = merged['name1'].str.lower().tolist()
+    n2_list = merged['name2'].str.lower().tolist()
+    a1_list = merged['addr1'].str.lower().tolist()
+    a2_list = merged['addr2'].str.lower().tolist()
+    c1_list = merged['country1'].tolist()
+    c2_list = merged['country2'].tolist()
+
+    features = {
+        'name_jw': [JaroWinkler.normalized_similarity(n1, n2) for n1, n2 in zip(n1_list, n2_list)],
+        'addr_jw': [JaroWinkler.normalized_similarity(a1, a2) for a1, a2 in zip(a1_list, a2_list)],
+        'name_jaccard': [token_jaccard(n1, n2) for n1, n2 in zip(n1_list, n2_list)],
+        'addr_jaccard': [token_jaccard(a1, a2) for a1, a2 in zip(a1_list, a2_list)],
+        'name_partial': [fuzz.partial_token_set_ratio(n1, n2) / 100.0 for n1, n2 in zip(n1_list, n2_list)],
+        'addr_partial': [fuzz.partial_token_set_ratio(a1, a2) / 100.0 for a1, a2 in zip(a1_list, a2_list)],
+        'name_sort': [fuzz.token_sort_ratio(n1, n2) / 100.0 for n1, n2 in zip(n1_list, n2_list)],
+        'addr_sort': [fuzz.token_sort_ratio(a1, a2) / 100.0 for a1, a2 in zip(a1_list, a2_list)],
+        'country_match': [1.0 if c1 == c2 and c1 != '' else 0.0 for c1, c2 in zip(c1_list, c2_list)]
+    }
     return pd.DataFrame(features)
 
 def build_training_dataset_hard_mining(candidates_file, positive_pairs, s1_df, s23_df):
@@ -96,11 +93,6 @@ def build_training_dataset_hard_mining(candidates_file, positive_pairs, s1_df, s
     tiebreak = 0
     max_heap_size = 3_000_000
     
-    with open(candidates_file, 'r', encoding='utf-8') as f:
-        # Check if the file has headers or not, normally it's a TSV
-        # Wait, candidates_file has headers: source1_entity_id, candidate_entity_ids
-        pass
-
     candidates = pd.read_csv(candidates_file, sep="\t")
     for _, row in candidates.iterrows():
         s1_id = row['source1_entity_id']
@@ -114,7 +106,6 @@ def build_training_dataset_hard_mining(candidates_file, positive_pairs, s1_df, s
                 positive_list.append({'source1_entity_id': s1_id, 'candidate_entity_id': cand_id, 'label': 1})
                 continue
             
-            # Fast Jaccard for Hard Negative scoring
             s1 = s1_dict.get(s1_id, {})
             s23 = s23_dict.get(cand_id, {})
             name1 = str(s1.get('business_name', '')).lower()
@@ -122,10 +113,9 @@ def build_training_dataset_hard_mining(candidates_file, positive_pairs, s1_df, s
             
             A = set(name1.split())
             B = set(name2.split())
-            if not A and not B: diff = 0
-            else: diff = len(A & B) / len(A | B)
+            diff = len(A & B) / len(A | B) if (A or B) else 0.0
             
-            if diff > 0.05:  # Only keep negatives that share at least some word!
+            if diff > 0.05:
                 if len(heap) >= max_heap_size:
                     heapq.heappushpop(heap, (diff, tiebreak, {'source1_entity_id': s1_id, 'candidate_entity_id': cand_id, 'label': 0}))
                 else:
@@ -136,7 +126,6 @@ def build_training_dataset_hard_mining(candidates_file, positive_pairs, s1_df, s
     heap.sort(reverse=True)
     hard_negatives = [record for _, _, record in heap[:target_neg]]
     
-    # Inject missed positives
     candidate_set = set((x['source1_entity_id'], x['candidate_entity_id']) for x in positive_list)
     missed_positives = positive_pairs - candidate_set
     for s1_id, p_id in missed_positives:
@@ -167,18 +156,11 @@ def apply_heuristic_overrides(df_pairs, s1_df, s23_df, model_probs, threshold=0.
     c1 = merged['country1'].str.lower().fillna('')
     c2 = merged['country2'].str.lower().fillna('')
     
-    # Rule 1: Exact match + same country -> force match
     mask1 = (name1_lower == name2_lower) & (name1_lower != '') & (c1 == c2) & (c1 != '')
     pred = np.where(mask1, 1, pred)
-    
-    # Rule 2: Different country -> force no match
     mask2 = (c1 != c2) & (c1 != '') & (c2 != '')
     pred = np.where(mask2, 0, pred)
-    
-    # Rule 3: Length diff > 50 -> force no match
-    len1 = name1_lower.str.len()
-    len2 = name2_lower.str.len()
-    mask3 = (len1 - len2).abs() > 50
+    mask3 = (name1_lower.str.len() - name2_lower.str.len()).abs() > 50
     pred = np.where(mask3, 0, pred)
     
     return pred
