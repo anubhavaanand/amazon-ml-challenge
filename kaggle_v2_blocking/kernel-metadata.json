@@ -1,0 +1,15 @@
+{
+  "id": "anubhavaanand/entity-resolve-v2-blocking",
+  "title": "EntityResolve V2 Blocking",
+  "code_file": "blocking_kernel.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": "true",
+  "enable_gpu": "false",
+  "enable_internet": "true",
+  "dataset_sources": [
+    "anubhavaanand/amazon-ml-challenge"
+  ],
+  "competition_sources": [],
+  "kernel_sources": []
+}
