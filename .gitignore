@@ -1,0 +1,20 @@
+# Environments
+.venv/
+env/
+__pycache__/
+*.pyc
+
+# Massive Data Files (DO NOT PUSH TO GITHUB)
+dataset/*
+!dataset/.gitkeep
+output/*
+!output/.gitkeep
+
+# Models
+*.pkl
+
+# IDE / System
+.qoder/
+.vscode/
+.DS_Store
+context/*.zip
