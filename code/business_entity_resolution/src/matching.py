@@ -109,7 +109,8 @@ def build_training_dataset(candidates_file, positive_pairs):
                 if is_pos:
                     positive_list.append({'source1_entity_id': s1_id, 'candidate_entity_id': c.strip(), 'label': 1})
                 else:
-                    negative_list.append({'source1_entity_id': s1_id, 'candidate_entity_id': c.strip(), 'label': 0})
+                    if random.random() < 0.05:  # Keep 5% of negatives on the fly to avoid OOM
+                        negative_list.append({'source1_entity_id': s1_id, 'candidate_entity_id': c.strip(), 'label': 0})
                 
     # Inject missed positives
     candidate_set = set((x['source1_entity_id'], x['candidate_entity_id']) for x in positive_list)
@@ -117,7 +118,7 @@ def build_training_dataset(candidates_file, positive_pairs):
     for s1_id, p_id in missed_positives:
         positive_list.append({'source1_entity_id': s1_id, 'candidate_entity_id': p_id, 'label': 1})
         
-    # SUBSAMPLE NEGATIVES (5:1 ratio) to save RAM
+    # Final clamp to 5:1 ratio
     target_negatives = len(positive_list) * 5
     if len(negative_list) > target_negatives:
         print(f"Subsampling {len(negative_list)} negatives down to {target_negatives}...")
@@ -209,11 +210,11 @@ def train_model(X, y):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_dir", type=str, default="../../dataset/train")
-    parser.add_argument("--candidates_file", type=str, default="../../output/train_candidates.tsv")
+    parser.add_argument("--data_dir", type=str, default="dataset/train")
+    parser.add_argument("--candidates_file", type=str, default="output/train_candidates.tsv")
     parser.add_argument("--mode", type=str, default="train", choices=["train", "predict"])
-    parser.add_argument("--model_path", type=str, default="../../output/xgb_model.pkl")
-    parser.add_argument("--out_file", type=str, default="../../output/matching_results.tsv")
+    parser.add_argument("--model_path", type=str, default="output/xgb_model.pkl")
+    parser.add_argument("--out_file", type=str, default="output/matching_results.tsv")
     args = parser.parse_args()
     
     if args.mode == "train":
