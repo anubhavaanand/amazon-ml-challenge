@@ -8,148 +8,38 @@ import xgboost as xgb
 import pickle
 import math
 import re
+import heapq
 from rapidfuzz import fuzz
 from rapidfuzz.distance import JaroWinkler
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.metrics import fbeta_score
 
 def load_ground_truth(file_path):
     print("Loading ground truth...")
     truth_df = pd.read_csv(file_path, sep='\t')
     positive_pairs = set()
-    
     for _, row in truth_df.iterrows():
         s1_id = row['source1_entity_id']
         matched = str(row['matched_entity_ids']).split(',')
         for m in matched:
             if m and m.strip() != 'nan':
                 positive_pairs.add((s1_id, m.strip()))
-                
     return positive_pairs
 
 def get_entity_dfs(split, data_dir):
     print(f"Loading entity texts into dataframes for {split}...")
     cols = ['entity_id', 'business_name', 'business_address', 'country']
-    
     s1_df = pd.read_csv(os.path.join(data_dir, f"{split}_source1.tsv"), sep='\t', usecols=cols, dtype='string').fillna('')
     s2_df = pd.read_csv(os.path.join(data_dir, f"{split}_source2.tsv"), sep='\t', usecols=cols, dtype='string').fillna('')
     s3_df = pd.read_csv(os.path.join(data_dir, f"{split}_source3.tsv"), sep='\t', usecols=cols, dtype='string').fillna('')
-    
-    # We keep S1 separate, and combine S2/S3
     s23_df = pd.concat([s2_df, s3_df], ignore_index=True)
     return s1_df, s23_df
 
-def compute_features(df_pairs, s1_df, s23_df):
-    print("Merging candidate pairs with their raw text strings...")
-    # Merge S1 texts
-    merged = df_pairs.merge(s1_df, left_on='source1_entity_id', right_on='entity_id', how='inner')
-    merged = merged.rename(columns={'business_name': 'name1', 'business_address': 'addr1', 'country': 'country1'})
-    merged.drop('entity_id', axis=1, inplace=True)
-    
-    # Merge Candidate texts
-    merged = merged.merge(s23_df, left_on='candidate_entity_id', right_on='entity_id', how='inner')
-    merged = merged.rename(columns={'business_name': 'name2', 'business_address': 'addr2', 'country': 'country2'})
-    merged.drop('entity_id', axis=1, inplace=True)
-    
-    print("Computing Kilo-optimized string similarity features...")
-    features = []
-    
-    # We iterate over the merged dataframe which only contains the pairs we actually care about
-    for _, row in merged.iterrows():
-        name1, name2 = str(row['name1']).lower(), str(row['name2']).lower()
-        addr1, addr2 = str(row['addr1']).lower(), str(row['addr2']).lower()
-        
-        # Jaro-Winkler
-        name_jw = JaroWinkler.normalized_similarity(name1, name2)
-        addr_jw = JaroWinkler.normalized_similarity(addr1, addr2)
-        
-        # Token Jaccard with Abbreviations
-        name_jaccard = token_jaccard(name1, name2)
-        addr_jaccard = token_jaccard(addr1, addr2)
-        
-        # RapidFuzz Partial Ratio & Token Sort Ratio
-        name_partial = fuzz.partial_token_set_ratio(name1, name2) / 100.0
-        addr_partial = fuzz.partial_token_set_ratio(addr1, addr2) / 100.0
-        
-        name_sort = fuzz.token_sort_ratio(name1, name2) / 100.0
-        addr_sort = fuzz.token_sort_ratio(addr1, addr2) / 100.0
-        
-        country_match = 1.0 if row['country1'] == row['country2'] and row['country1'] != '' else 0.0
-        
-        features.append({
-            'name_jw': name_jw,
-            'addr_jw': addr_jw,
-            'name_jaccard': name_jaccard,
-            'addr_jaccard': addr_jaccard,
-            'name_partial': name_partial,
-            'addr_partial': addr_partial,
-            'name_sort': name_sort,
-            'addr_sort': addr_sort,
-            'country_match': country_match
-        })
-        
-    feat_df = pd.DataFrame(features)
-    return feat_df
-
-def build_training_dataset(candidates_file, positive_pairs):
-    print("Loading candidate pairs from blocking stage...")
-    candidates = pd.read_csv(candidates_file, sep="\t")
-    
-    positive_list = []
-    negative_list = []
-    
-    # Flatten candidates
-    for _, row in candidates.iterrows():
-        s1_id = row['source1_entity_id']
-        cands = str(row['candidate_entity_ids']).split(',')
-        for c in cands:
-            if c and c.strip() != 'nan':
-                is_pos = (s1_id, c.strip()) in positive_pairs
-                if is_pos:
-                    positive_list.append({'source1_entity_id': s1_id, 'candidate_entity_id': c.strip(), 'label': 1})
-                else:
-                    if random.random() < 0.05:  # Keep 5% of negatives on the fly to avoid OOM
-                        negative_list.append({'source1_entity_id': s1_id, 'candidate_entity_id': c.strip(), 'label': 0})
-                
-    # Inject missed positives
-    candidate_set = set((x['source1_entity_id'], x['candidate_entity_id']) for x in positive_list)
-    missed_positives = positive_pairs - candidate_set
-    for s1_id, p_id in missed_positives:
-        positive_list.append({'source1_entity_id': s1_id, 'candidate_entity_id': p_id, 'label': 1})
-        
-    # Final clamp to 5:1 ratio
-    target_negatives = len(positive_list) * 5
-    if len(negative_list) > target_negatives:
-        print(f"Subsampling {len(negative_list)} negatives down to {target_negatives}...")
-        negative_list = random.sample(negative_list, target_negatives)
-        
-    pair_list = positive_list + negative_list
-    random.shuffle(pair_list)
-    df_pairs = pd.DataFrame(pair_list)
-    print(f"Total training pairs: {len(df_pairs)} (Positives: {df_pairs['label'].sum()})")
-    
-    return df_pairs
-
 _ABBREV = {
-    r'\bpvt\b': 'private',
-    r'\bcorp\b': 'corporation',
-    r'\binc\b': 'incorporated',
-    r'\bllc\b': 'limited liability company',
-    r'\bltd\b': 'limited',
-    r'\bco\b': 'company',
-    r'\bintl\b': 'international',
-    r'\bstr\b': 'street',
-    r'\bave\b': 'avenue',
-    r'\bblvd\b': 'boulevard',
-    r'\bdr\b': 'drive',
-    r'\brd\b': 'road',
-    r'\bln\b': 'lane',
-    r'\bapt\b': 'apartment',
-    r'\bste\b': 'suite',
-    r'\bfl\b': 'floor',
-    r'\bsoln\.?\b': 'solution',
-    r'\bma\b': 'massachusetts'
+    r'\bpvt\b': 'private', r'\bcorp\b': 'corporation', r'\binc\b': 'incorporated',
+    r'\bllc\b': 'limited liability company', r'\bltd\b': 'limited', r'\bco\b': 'company',
+    r'\bintl\b': 'international', r'\bstr\b': 'street', r'\bave\b': 'avenue',
+    r'\bblvd\b': 'boulevard', r'\bdr\b': 'drive', r'\brd\b': 'road', r'\bln\b': 'lane',
+    r'\bapt\b': 'apartment', r'\bste\b': 'suite', r'\bfl\b': 'floor', r'\bsoln\.?\b': 'solution'
 }
 
 def expand_abbrev(text: str) -> str:
@@ -163,49 +53,162 @@ def token_jaccard(a: str, b: str) -> float:
     if not A and not B: return 1.0
     return len(A & B) / len(A | B)
 
+def compute_features(df_pairs, s1_df, s23_df):
+    print("Merging candidate pairs with text...")
+    merged = df_pairs.merge(s1_df, left_on='source1_entity_id', right_on='entity_id', how='inner')
+    merged = merged.rename(columns={'business_name': 'name1', 'business_address': 'addr1', 'country': 'country1'})
+    merged.drop('entity_id', axis=1, inplace=True)
+    merged = merged.merge(s23_df, left_on='candidate_entity_id', right_on='entity_id', how='inner')
+    merged = merged.rename(columns={'business_name': 'name2', 'business_address': 'addr2', 'country': 'country2'})
+    merged.drop('entity_id', axis=1, inplace=True)
+    
+    print("Computing features...")
+    features = []
+    for _, row in merged.iterrows():
+        name1, name2 = str(row['name1']).lower(), str(row['name2']).lower()
+        addr1, addr2 = str(row['addr1']).lower(), str(row['addr2']).lower()
+        
+        name_jw = JaroWinkler.normalized_similarity(name1, name2)
+        addr_jw = JaroWinkler.normalized_similarity(addr1, addr2)
+        name_jaccard = token_jaccard(name1, name2)
+        addr_jaccard = token_jaccard(addr1, addr2)
+        name_partial = fuzz.partial_token_set_ratio(name1, name2) / 100.0
+        addr_partial = fuzz.partial_token_set_ratio(addr1, addr2) / 100.0
+        name_sort = fuzz.token_sort_ratio(name1, name2) / 100.0
+        addr_sort = fuzz.token_sort_ratio(addr1, addr2) / 100.0
+        country_match = 1.0 if row['country1'] == row['country2'] and row['country1'] != '' else 0.0
+        
+        features.append({
+            'name_jw': name_jw, 'addr_jw': addr_jw, 'name_jaccard': name_jaccard, 'addr_jaccard': addr_jaccard,
+            'name_partial': name_partial, 'addr_partial': addr_partial, 'name_sort': name_sort, 'addr_sort': addr_sort,
+            'country_match': country_match
+        })
+    return pd.DataFrame(features)
+
+def build_training_dataset_hard_mining(candidates_file, positive_pairs, s1_df, s23_df):
+    print("Converting DataFrames to lookup dicts for Hard Negative Mining...")
+    s1_dict = s1_df.set_index('entity_id').to_dict('index')
+    s23_dict = s23_df.set_index('entity_id').to_dict('index')
+    
+    print("Streaming candidate pairs for Hard Negative Mining...")
+    positive_list = []
+    heap = []
+    tiebreak = 0
+    max_heap_size = 3_000_000
+    
+    with open(candidates_file, 'r', encoding='utf-8') as f:
+        # Check if the file has headers or not, normally it's a TSV
+        # Wait, candidates_file has headers: source1_entity_id, candidate_entity_ids
+        pass
+
+    candidates = pd.read_csv(candidates_file, sep="\t")
+    for _, row in candidates.iterrows():
+        s1_id = row['source1_entity_id']
+        cands = str(row['candidate_entity_ids']).split(',')
+        for cand_id in cands:
+            cand_id = cand_id.strip()
+            if not cand_id or cand_id == 'nan':
+                continue
+                
+            if (s1_id, cand_id) in positive_pairs:
+                positive_list.append({'source1_entity_id': s1_id, 'candidate_entity_id': cand_id, 'label': 1})
+                continue
+            
+            # Fast Jaccard for Hard Negative scoring
+            s1 = s1_dict.get(s1_id, {})
+            s23 = s23_dict.get(cand_id, {})
+            name1 = str(s1.get('business_name', '')).lower()
+            name2 = str(s23.get('business_name', '')).lower()
+            
+            A = set(name1.split())
+            B = set(name2.split())
+            if not A and not B: diff = 0
+            else: diff = len(A & B) / len(A | B)
+            
+            if diff > 0.05:  # Only keep negatives that share at least some word!
+                if len(heap) >= max_heap_size:
+                    heapq.heappushpop(heap, (diff, tiebreak, {'source1_entity_id': s1_id, 'candidate_entity_id': cand_id, 'label': 0}))
+                else:
+                    heapq.heappush(heap, (diff, tiebreak, {'source1_entity_id': s1_id, 'candidate_entity_id': cand_id, 'label': 0}))
+                tiebreak += 1
+
+    target_neg = len(positive_list) * 5
+    heap.sort(reverse=True)
+    hard_negatives = [record for _, _, record in heap[:target_neg]]
+    
+    # Inject missed positives
+    candidate_set = set((x['source1_entity_id'], x['candidate_entity_id']) for x in positive_list)
+    missed_positives = positive_pairs - candidate_set
+    for s1_id, p_id in missed_positives:
+        positive_list.append({'source1_entity_id': s1_id, 'candidate_entity_id': p_id, 'label': 1})
+        
+    pair_list = positive_list + hard_negatives
+    random.shuffle(pair_list)
+    df_pairs = pd.DataFrame(pair_list)
+    print(f"Total training pairs: {len(df_pairs)} (Positives: {df_pairs['label'].sum()})")
+    return df_pairs
+
+def apply_heuristic_overrides(df_pairs, s1_df, s23_df, model_probs, threshold=0.5):
+    print("Applying deterministic business logic overrides...")
+    s1_small = s1_df[['entity_id', 'business_name', 'country']]
+    s23_small = s23_df[['entity_id', 'business_name', 'country']]
+    
+    merged = df_pairs.merge(s1_small, left_on='source1_entity_id', right_on='entity_id', how='left')
+    merged = merged.merge(s23_small, left_on='candidate_entity_id', right_on='entity_id', how='left')
+    merged = merged.rename(columns={
+        'business_name_x': 'name1', 'country_x': 'country1',
+        'business_name_y': 'name2', 'country_y': 'country2'
+    })
+    
+    pred = (model_probs >= threshold).astype(int)
+    
+    name1_lower = merged['name1'].str.lower().fillna('')
+    name2_lower = merged['name2'].str.lower().fillna('')
+    c1 = merged['country1'].str.lower().fillna('')
+    c2 = merged['country2'].str.lower().fillna('')
+    
+    # Rule 1: Exact match + same country -> force match
+    mask1 = (name1_lower == name2_lower) & (name1_lower != '') & (c1 == c2) & (c1 != '')
+    pred = np.where(mask1, 1, pred)
+    
+    # Rule 2: Different country -> force no match
+    mask2 = (c1 != c2) & (c1 != '') & (c2 != '')
+    pred = np.where(mask2, 0, pred)
+    
+    # Rule 3: Length diff > 50 -> force no match
+    len1 = name1_lower.str.len()
+    len2 = name2_lower.str.len()
+    mask3 = (len1 - len2).abs() > 50
+    pred = np.where(mask3, 0, pred)
+    
+    return pred
+
 def optimize_threshold(probs, y_true):
     print("Calibrating decision threshold to maximize F0.5 Macro score...")
     best_t = 0.5
     best_f05 = 0.0
-    
     for t in [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]:
         preds = (probs > t).astype(int)
         score = fbeta_score(y_true, preds, beta=0.5, average='macro', zero_division=0)
         if score > best_f05:
-            best_f05 = score
-            best_t = t
-            
-    print(f"Optimal Threshold: {best_t} (Estimated Training F0.5: {best_f05:.4f})")
+            best_f05 = score; best_t = t
+    print(f"Optimal Threshold: {best_t} (Training F0.5: {best_f05:.4f})")
     return best_t
 
 def train_model(X, y):
-    print("Training XGBoost with Kilo's precision-first hyperparameters...")
+    print("Training XGBoost...")
     pos_count = y.sum()
     neg_count = len(y) - pos_count
     scale_weight = min(neg_count / pos_count, 200.0) if pos_count > 0 else 5.0
-    
     clf = xgb.XGBClassifier(
-        tree_method='hist',
-        device='cuda',
-        objective='binary:logistic',
-        scale_pos_weight=scale_weight,
-        max_depth=5,
-        gamma=0.5,
-        min_child_weight=5,
-        learning_rate=0.03,
-        max_delta_step=5,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        n_estimators=300,
-        eval_metric='aucpr',
-        n_jobs=-1
+        tree_method='hist', device='cuda', objective='binary:logistic',
+        scale_pos_weight=scale_weight, max_depth=5, gamma=0.5, min_child_weight=5,
+        learning_rate=0.03, max_delta_step=5, subsample=0.8, colsample_bytree=0.8,
+        n_estimators=300, eval_metric='aucpr', n_jobs=-1
     )
     clf.fit(X, y)
-    
-    # Train-set threshold calibration
     probs = clf.predict_proba(X)[:, 1]
     best_t = optimize_threshold(probs, y)
-    
     return clf, best_t
 
 def main():
@@ -220,13 +223,10 @@ def main():
     if args.mode == "train":
         gt_file = os.path.join(args.data_dir, "train_ground_truth.tsv")
         positive_pairs = load_ground_truth(gt_file)
-        
-        df_pairs = build_training_dataset(args.candidates_file, positive_pairs)
         s1_df, s23_df = get_entity_dfs("train", args.data_dir)
-        
+        df_pairs = build_training_dataset_hard_mining(args.candidates_file, positive_pairs, s1_df, s23_df)
         X = compute_features(df_pairs, s1_df, s23_df)
         y = df_pairs['label']
-        
         model, best_t = train_model(X, y)
         with open(args.model_path, 'wb') as f:
             pickle.dump({'model': model, 'threshold': best_t}, f)
@@ -252,10 +252,12 @@ def main():
             model = data['model']
             threshold = data['threshold']
             
-        print(f"Predicting matches with Calibrated F0.5 threshold ({threshold})...")
+        print(f"Predicting matches...")
         probs = model.predict_proba(X)[:, 1]
         
-        df_pairs['is_match'] = (probs > threshold).astype(int)
+        # Apply Post-Processing Heuristics!
+        final_pred = apply_heuristic_overrides(df_pairs, s1_df, s23_df, probs, threshold)
+        df_pairs['is_match'] = final_pred
         
         matches = df_pairs[df_pairs['is_match'] == 1].groupby('source1_entity_id')['candidate_entity_id'].apply(list).reset_index()
         match_dict = dict(zip(matches['source1_entity_id'], matches['candidate_entity_id']))
