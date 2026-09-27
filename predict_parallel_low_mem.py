@@ -127,7 +127,7 @@ if __name__ == '__main__':
     t0 = time.time()
     
     # Process 4 chunks at a time in parallel to keep memory footprint under 4GB total
-    results = Parallel(n_jobs=-1, return_as="generator", pre_dispatch="2*n_jobs")(
+    results = Parallel(n_jobs=-1, return_as="generator", pre_dispatch="2*n_jobs", backend="threading")(
         delayed(process_chunk)(c, s1_df, s23_df, model, threshold) 
         for c in chunk_generator(test_candidates)
     )
