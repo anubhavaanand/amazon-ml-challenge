@@ -1,5 +1,5 @@
 """
-Amazon ML Challenge 2026 — V2 Blocking Script
+EntityResolve-ML — V2 Blocking Script
 
 Implements the V2 blocking pipeline:
   Stage 1: Multi-key exact blocking with 5 keys per entity
@@ -246,7 +246,7 @@ def generate_candidates_two_stage(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Amazon ML Challenge 2026 — V2 Blocking")
+    parser = argparse.ArgumentParser(description="EntityResolve-ML — V2 Blocking")
     parser.add_argument("--data_dir", type=str, default="dataset/train", help="Path to split TSV directory")
     parser.add_argument("--split", type=str, default="train", choices=["train", "test"])
     parser.add_argument("--out_file", type=str, default=None, help="Output candidate TSV path")

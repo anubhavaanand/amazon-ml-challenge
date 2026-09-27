@@ -1,4 +1,4 @@
-# Amazon ML Challenge 2026: Ultimate V2 Kaggle Pipeline Plan
+# EntityResolve-ML: Ultimate V2 Kaggle Pipeline Plan
 
 ## Goal
 Design a production-ready Kaggle notebook that maximizes macro F0.5 using Dual T4 GPUs (32GB VRAM) and 30GB RAM, with ensemble models and deeper text features.
@@ -928,7 +928,7 @@ def memory_profile_decorator(func):
 ### 1. Data Loading
 ```python
 # Use Kaggle's direct paths
-DATA_DIR = '/kaggle/input/amazon-ml-challenge-2026'
+DATA_DIR = '/kaggle/input/entity-resolve-ml-2026'
 WORKING_DIR = '/kaggle/working'
 
 # Cache intermediate results

@@ -14,8 +14,8 @@ from rapidfuzz import fuzz
 from rapidfuzz.distance import JaroWinkler
 import time
 
-KAGGLE_DATA_DIR = "/kaggle/input/datasets/anubhavaanand/amazon-ml-challenge/cp/dataset/test"
-CANDIDATES_FILE = "/kaggle/input/datasets/anubhavaanand/amazon-ml-challenge/cp/output/test_candidates.tsv"
+KAGGLE_DATA_DIR = "/kaggle/input/datasets/anubhavaanand/entity-resolve-ml/cp/dataset/test"
+CANDIDATES_FILE = "/kaggle/input/datasets/anubhavaanand/entity-resolve-ml/cp/output/test_candidates.tsv"
 MODEL_PATH = "/kaggle/input/datasets/anubhavaanand/amazon-ml-xgb-model-file/xgb_model.pkl"
 OUT_FILE = "matching_results.tsv"
 
@@ -185,7 +185,7 @@ for i, (start, num) in enumerate(parts):
   "enable_gpu": "false",
   "enable_internet": "true",
   "dataset_sources": [
-    "anubhavaanand/amazon-ml-challenge",
+    "anubhavaanand/entity-resolve-ml",
     "anubhavaanand/amazon-ml-xgb-model-file"
   ]
 }}""")

@@ -1,5 +1,5 @@
 """
-Amazon ML Challenge 2026 — V2 Ensemble Script
+EntityResolve-ML — V2 Ensemble Script
 
 Designed for Kaggle Dual T4 GPUs.
 Trains XGBoost + LightGBM on V2 blocking candidates with deep text-similarity features,
@@ -515,7 +515,7 @@ def df_to_dicts(s1_df: pd.DataFrame, s23_df: pd.DataFrame):
 # Main
 # ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="Amazon ML Challenge 2026 — V2 Ensemble")
+    parser = argparse.ArgumentParser(description="EntityResolve-ML — V2 Ensemble")
     parser.add_argument("--data_dir", type=str, default="dataset/train")
     parser.add_argument("--candidates_file", type=str, default="output/v2_train_candidates.tsv")
     parser.add_argument("--mode", type=str, default="train", choices=["train", "predict"])
