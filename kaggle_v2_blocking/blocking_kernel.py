@@ -1,7 +1,9 @@
 import os
 import sys
 import subprocess
+import time
 
+t_start = time.time()
 print("Cloning repository...")
 subprocess.run("git clone https://github.com/anubhavaanand/entity-resolve-ml.git", shell=True, check=True)
 
@@ -41,4 +43,5 @@ cmd_test = f"python src/blocking/blocking_v2.py --data_dir {DATA_DIR}/test --spl
 print(f"Running: {cmd_test}")
 subprocess.run(cmd_test, shell=True, check=True)
 
-print("V2 Blocking Complete! Files saved to /kaggle/working/")
+print(f"V2 Blocking Complete in {time.time() - t_start:.1f}s! Files saved to /kaggle/working/:")
+subprocess.run("ls -lh /kaggle/working/", shell=True)
