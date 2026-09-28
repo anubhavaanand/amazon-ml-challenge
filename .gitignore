@@ -12,7 +12,7 @@ output/*
 
 # Models
 *.pkl
-
+.kilo
 # IDE / System
 .qoder/
 .vscode/
